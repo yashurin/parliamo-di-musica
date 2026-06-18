@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+chainlit
+openai
+httpx
+pydantic-settings
+python-dotenv
+spotipy
+aiosqlite

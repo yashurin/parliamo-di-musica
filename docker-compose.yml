@@ -1,0 +1,49 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    depends_on:
+      ollama:
+        condition: service_started
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434/v1
+      - OLLAMA_MODEL=qwen3:8b
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - GENIUS_ACCESS_TOKEN=${GENIUS_ACCESS_TOKEN:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - CHAT_DB_PATH=/app/data/chat.db
+    volumes:
+      - ./backend:/app
+      - chat_data:/app/data
+    # GPU support (uncomment if you have NVIDIA):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  ollama:
+    image: ollama/ollama:latest
+    # Port not exposed on host by default (avoids conflict with local Ollama on 11434).
+    # Uncomment to access container Ollama directly:
+    # ports:
+    #   - "11435:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    entrypoint: >
+      sh -c "
+        ollama serve &
+        sleep 10 &&
+        ollama pull qwen3:8b &&
+        tail -f /dev/null
+      "
+
+volumes:
+  ollama_models:
+  chat_data:
