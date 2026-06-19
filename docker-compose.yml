@@ -6,16 +6,23 @@ services:
     ports:
       - "8000:8000"
     depends_on:
+      redis:
+        condition: service_healthy
       ollama:
         condition: service_started
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434/v1
       - OLLAMA_MODEL=qwen3:8b
-      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
-      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - LASTFM_API_KEY=${LASTFM_API_KEY:-}
       - GENIUS_ACCESS_TOKEN=${GENIUS_ACCESS_TOKEN:-}
+      - MUSICBRAINZ_USER_AGENT=${MUSICBRAINZ_USER_AGENT:-MusicAI-Chat/0.1 (contact@example.com)}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - CHAT_DB_PATH=/app/data/chat.db
+      - LOG_FILE=${LOG_FILE:-/app/data/app.log}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=${REDIS_DB:-0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - CHAINLIT_AUTH_SECRET=${CHAINLIT_AUTH_SECRET:-change-me-in-production}
     volumes:
       - ./backend:/app
       - chat_data:/app/data
@@ -27,6 +34,19 @@ services:
     #         - driver: nvidia
     #           count: all
     #           capabilities: [gpu]
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   ollama:
     image: ollama/ollama:latest
@@ -47,3 +67,4 @@ services:
 volumes:
   ollama_models:
   chat_data:
+  redis_data:

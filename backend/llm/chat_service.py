@@ -1,32 +1,33 @@
-import json
-import logging
-from typing import Any, AsyncGenerator, Callable, Awaitable
+from typing import Any, AsyncGenerator, Awaitable, Callable
 
 from llm.ollama_client import (
     chat_completion,
     message_to_dict,
     stream_chat_completion,
 )
+from logging_config import get_logger
 from persistence.chat_store import chat_store
+from persistence.redis_store import redis_store
 from tools.tool_registry import execute_tool, get_tool_schemas
 
-logger = logging.getLogger(__name__)
+logger = get_logger("llm")
 
 SYSTEM_PROMPT = """You are GrokMusic, a knowledgeable, enthusiastic, and helpful music expert.
 You have access to real-time tools for searching music catalogs, getting recommendations,
 fetching structured artist metadata, and looking up lyrics information.
 
 Guidelines:
-- Be accurate and cite sources when possible (Spotify, MusicBrainz, Genius).
-- Use tools when fresh catalog data, recommendations, or audio features would improve your answer.
+- Be accurate and cite sources when possible (MusicBrainz, Last.fm, Genius).
+- Use tools when fresh catalog data, recommendations, or lyrics would improve your answer.
 - Handle ambiguity gracefully and ask clarifying questions when needed.
 - For lyrics, summarize themes and meaning rather than reproducing full copyrighted lyrics.
 - Suggest thoughtful follow-up questions when helpful.
 
 Examples of good tool use:
-- "Recommend chill tracks similar to Daft Punk's Get Lucky" -> use Spotify search + recommendations.
-- "Who is Miles Davis and what are his notable releases?" -> use MusicBrainz artist details.
-- "What is Hotel California about?" -> use Genius metadata, then explain themes.
+- "Recommend artists similar to Daft Punk" -> use get_lastfm_similar_artists.
+- "Find tracks similar to Get Lucky by Daft Punk" -> use get_lastfm_similar_tracks.
+- "Who is Miles Davis?" -> use search_musicbrainz_artists.
+- "What is Hotel California about?" -> use get_genius_lyrics, then explain themes.
 """
 
 MAX_TOOL_ROUNDS = 5
@@ -49,7 +50,8 @@ async def _run_tool_loop(
 ) -> tuple[list[dict[str, Any]], str | None]:
     tools = get_tool_schemas()
 
-    for _ in range(MAX_TOOL_ROUNDS):
+    for round_index in range(MAX_TOOL_ROUNDS):
+        logger.debug("Tool loop round %d with %d messages", round_index + 1, len(messages))
         assistant_message = await chat_completion(messages=messages, tools=tools, temperature=0.4)
         if not assistant_message.tool_calls:
             if assistant_message.content:
@@ -61,6 +63,7 @@ async def _run_tool_loop(
         for tool_call in assistant_message.tool_calls:
             tool_name = tool_call.function.name
             tool_args = tool_call.function.arguments
+            logger.info("Calling tool %s", tool_name)
             if on_tool_call:
                 await on_tool_call(tool_name, tool_args, tool_call.id)
 
@@ -73,6 +76,7 @@ async def _run_tool_loop(
                 }
             )
 
+    logger.warning("Reached max tool rounds (%d)", MAX_TOOL_ROUNDS)
     return messages, None
 
 
@@ -118,29 +122,43 @@ async def persist_exchange(
     assistant_message: str,
     tool_events: list[dict[str, str]] | None = None,
 ) -> None:
-    await chat_store.add_message(thread_id, "user", user_message)
+    # Chainlit persists user/assistant steps via the data layer; store tool metadata only.
     if tool_events:
-        await chat_store.add_message(
-            thread_id,
-            "assistant",
-            assistant_message,
-            metadata={"tool_events": tool_events},
-        )
-    else:
-        await chat_store.add_message(thread_id, "assistant", assistant_message)
-
-    threads = await chat_store.list_threads(limit=100)
-    current = next((t for t in threads if t["id"] == thread_id), None)
-    if current and current["title"] == "New conversation":
-        title = user_message.strip()[:60] or "Music chat"
-        await chat_store.update_thread_title(thread_id, title)
+        meta = await redis_store.get_thread_meta(thread_id)
+        existing_metadata = (meta or {}).get("metadata") or {}
+        existing_metadata["last_tool_events"] = tool_events
+        await redis_store.update_thread(thread_id, metadata=existing_metadata)
+        logger.debug("Stored tool metadata for thread_id=%s", thread_id)
 
 
-async def load_thread_history(thread_id: str) -> list[dict[str, str]]:
+async def update_thread_title_from_message(thread_id: str, user_message: str) -> None:
+    meta = await redis_store.get_thread_meta(thread_id)
+    if not meta:
+        return
+    if meta.get("name") and meta["name"] != "New conversation":
+        return
+    title = user_message.strip()[:60] or "Music chat"
+    await chat_store.update_thread_title(thread_id, title)
+    logger.debug("Set thread_id=%s title to %r", thread_id, title)
+
+
+async def load_thread_history(
+    thread_id: str,
+    current_user_message: str | None = None,
+) -> list[dict[str, str]]:
     await chat_store.initialize()
     stored = await chat_store.get_thread_messages(thread_id)
-    return [
+    history = [
         {"role": item["role"], "content": item["content"]}
         for item in stored
         if item["role"] in {"user", "assistant"} and item.get("content")
     ]
+    if (
+        current_user_message
+        and history
+        and history[-1]["role"] == "user"
+        and history[-1]["content"] == current_user_message
+    ):
+        history = history[:-1]
+    logger.debug("Loaded %d history messages for thread_id=%s", len(history), thread_id)
+    return history

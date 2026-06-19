@@ -5,7 +5,7 @@ A fully local, privacy-focused AI chat app for music questions. It combines:
 - **FastAPI** backend
 - **Chainlit** chat UI at `/chat`
 - **Ollama** with `qwen3:8b` for local inference
-- **Music tools**: Spotify, MusicBrainz, and optional Genius
+- **Music tools**: MusicBrainz, Last.fm, and optional Genius
 
 ## Quick start
 
@@ -15,8 +15,9 @@ A fully local, privacy-focused AI chat app for music questions. It combines:
 cp .env.example .env
 ```
 
-2. Set `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` in `.env` (required for Spotify tools).
-   Optionally set `GENIUS_ACCESS_TOKEN` for lyrics metadata.
+2. Set `LASTFM_API_KEY` in `.env` (required for recommendations and similar artists/tracks).
+   Get a free key at https://www.last.fm/api/account/create.
+   Optionally set `GENIUS_ACCESS_TOKEN` for lyrics lookup at https://genius.com/developers.
 
 3. Start the stack:
 
@@ -35,9 +36,10 @@ The first run pulls `qwen3:8b`, which can take several minutes.
 
 ## Example questions
 
-- "Recommend 5 tracks similar to Blinding Lights by The Weeknd but more synthwave"
+- "Recommend artists similar to Daft Punk"
+- "Find tracks similar to Get Lucky by Daft Punk"
 - "Who is Miles Davis and what are his notable releases?"
-- "Give me the audio features of Bohemian Rhapsody"
+- "Get lyrics for Bohemian Rhapsody"
 - "What is Hotel California about?"
 
 ## Project structure
@@ -48,7 +50,7 @@ backend/
 ├── chainlit_app.py      # Chainlit handlers
 ├── config.py            # Settings from environment
 ├── llm/                 # Ollama client + chat orchestration
-├── tools/               # Spotify, MusicBrainz, Genius tools
+├── tools/               # MusicBrainz, Last.fm, Genius tools
 └── persistence/         # SQLite chat history
 ```
 
@@ -74,6 +76,6 @@ If you have an NVIDIA GPU, uncomment the GPU section in `docker-compose.yml` for
 ## Notes
 
 - Chat history is stored in a Docker volume at `/app/data/chat.db`.
-- MusicBrainz works without credentials.
-- Spotify and Genius require tokens in `.env`.
+- MusicBrainz works without credentials (only a User-Agent is required).
+- Last.fm requires a free API key; Genius is optional for lyrics.
 - Full lyrics are not reproduced; the assistant summarizes themes and links to Genius when available.

@@ -8,11 +8,18 @@ class Settings(BaseSettings):
 
     ollama_base_url: str = "http://ollama:11434/v1"
     ollama_model: str = "qwen3:8b"
-    spotify_client_id: str = ""
-    spotify_client_secret: str = ""
+    lastfm_api_key: str = ""
     genius_access_token: str = ""
+    musicbrainz_user_agent: str = "MusicAI-Chat/0.1 (contact@example.com)"
     log_level: str = "INFO"
-    chat_db_path: str = "/app/data/chat.db"
+    log_file: str = ""
+
+    redis_host: str = "redis"
+    redis_port: int = 6379
+    redis_db: int = 0
+    redis_password: str = ""
+
+    chainlit_auth_secret: str = "change-me-in-production"
 
 
 @lru_cache

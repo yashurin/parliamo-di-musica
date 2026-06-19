@@ -5,5 +5,9 @@ openai
 httpx
 pydantic-settings
 python-dotenv
-spotipy
-aiosqlite
+musicbrainzngs>=0.7.1
+pylast>=5.2.0
+lyricsgenius>=3.0.1
+redis>=5.0.0
+bcrypt>=4.1.0
+email-validator>=2.0.0

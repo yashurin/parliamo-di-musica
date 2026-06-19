@@ -1,59 +1,46 @@
-import logging
 from typing import Any
 
-import httpx
+import lyricsgenius
 
 from config import get_settings
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("tools")
+
 settings = get_settings()
 
-GENIUS_API = "https://api.genius.com"
+_genius: lyricsgenius.Genius | None = None
 
 
-async def _genius_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    if not settings.genius_access_token:
-        raise ValueError("Genius API token is not configured. Set GENIUS_ACCESS_TOKEN.")
-
-    headers = {"Authorization": f"Bearer {settings.genius_access_token}"}
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.get(f"{GENIUS_API}{path}", params=params, headers=headers)
-        response.raise_for_status()
-        return response.json()
-
-
-async def search_genius_song(query: str, limit: int = 3) -> list[dict[str, Any]]:
-    limit = max(1, min(limit, 10))
-    data = await _genius_get("/search", {"q": query})
-    hits = data.get("response", {}).get("hits", [])[:limit]
-    songs = []
-    for hit in hits:
-        song = hit.get("result", {})
-        songs.append(
-            {
-                "id": song.get("id"),
-                "title": song.get("title"),
-                "artist": song.get("primary_artist", {}).get("name"),
-                "url": song.get("url"),
-                "annotation_count": song.get("annotation_count"),
-            }
+def _get_genius() -> lyricsgenius.Genius | None:
+    global _genius
+    if _genius is None and settings.genius_access_token:
+        _genius = lyricsgenius.Genius(
+            settings.genius_access_token,
+            verbose=False,
+            remove_section_headers=True,
         )
-    return songs
+    return _genius
 
 
-async def get_song_lyrics_info(song_query: str) -> dict[str, Any]:
-    songs = await search_genius_song(song_query, limit=1)
-    if not songs:
-        return {"error": f"No Genius song found for: {song_query}"}
-
-    song = songs[0]
-    return {
-        "title": song["title"],
-        "artist": song["artist"],
-        "genius_url": song["url"],
-        "note": (
-            "Full lyrics are not reproduced here for copyright reasons. "
-            "Use the Genius URL for the official lyrics page and summarize themes on request."
-        ),
-        "source": "Genius",
-    }
+def get_lyrics(song_title: str, artist: str | None = None) -> dict[str, Any]:
+    """Fetch lyrics and basic annotation info from Genius."""
+    logger.info("Genius lyrics lookup title=%r artist=%r", song_title, artist)
+    genius = _get_genius()
+    if not genius:
+        return {"error": "Genius token not configured"}
+    try:
+        song = genius.search_song(song_title, artist)
+        if song:
+            lyrics = song.lyrics
+            if len(lyrics) > 2000:
+                lyrics = lyrics[:2000] + "..."
+            return {
+                "title": song.title,
+                "artist": song.artist,
+                "lyrics": lyrics,
+                "url": song.url,
+            }
+        return {"error": "Song not found"}
+    except Exception as e:
+        return {"error": str(e)}

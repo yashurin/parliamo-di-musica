@@ -1,12 +1,12 @@
 import asyncio
 import inspect
 import json
-import logging
 from typing import Any, Callable
 
-from tools import genius_tool, musicbrainz_tool, spotify_tool
+from logging_config import get_logger
+from tools import genius_tool, lastfm_tool, musicbrainz_tool
 
-logger = logging.getLogger(__name__)
+logger = get_logger("tools")
 
 ToolHandler = Callable[..., Any]
 
@@ -14,13 +14,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_spotify_tracks",
-            "description": "Search Spotify for tracks matching a query.",
+            "name": "search_musicbrainz_artists",
+            "description": "Search for artists on MusicBrainz. Use this for general artist information and to get stable IDs.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Track or song search query."},
-                    "limit": {"type": "integer", "description": "Maximum number of tracks to return.", "default": 5},
+                    "query": {"type": "string", "description": "Artist name or partial name"},
+                    "limit": {"type": "integer", "default": 5},
                 },
                 "required": ["query"],
             },
@@ -29,71 +29,13 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_spotify_artists",
-            "description": "Search Spotify for artists matching a query.",
+            "name": "get_lastfm_similar_artists",
+            "description": "Get artists similar to a given artist. Excellent for recommendations.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Artist search query."},
-                    "limit": {"type": "integer", "description": "Maximum number of artists to return.", "default": 5},
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_track_recommendations",
-            "description": "Get Spotify track recommendations similar to a seed track query.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "seed_track": {"type": "string", "description": "Track name or search query to seed recommendations."},
-                    "limit": {"type": "integer", "description": "Number of recommendations to return.", "default": 5},
-                },
-                "required": ["seed_track"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_track_audio_features",
-            "description": "Get Spotify audio features for a track (tempo, energy, valence, key, etc.).",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "track_query": {"type": "string", "description": "Track name or search query."},
-                },
-                "required": ["track_query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_musicbrainz_artist",
-            "description": "Search MusicBrainz for artist metadata by name.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Artist name to search."},
-                    "limit": {"type": "integer", "description": "Maximum number of artists to return.", "default": 5},
-                },
-                "required": ["name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "get_musicbrainz_artist_details",
-            "description": "Get detailed MusicBrainz artist info including notable releases.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "artist_name": {"type": "string", "description": "Artist name to look up."},
+                    "artist_name": {"type": "string"},
+                    "limit": {"type": "integer", "default": 8},
                 },
                 "required": ["artist_name"],
             },
@@ -102,43 +44,41 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "search_genius_song",
-            "description": "Search Genius for songs (lyrics metadata and URLs). Requires Genius token.",
+            "name": "get_lastfm_similar_tracks",
+            "description": "Find tracks similar to a specific song. Great for 'recommend songs like X'.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "Song title and/or artist to search."},
-                    "limit": {"type": "integer", "description": "Maximum number of songs to return.", "default": 3},
+                    "artist": {"type": "string"},
+                    "track": {"type": "string"},
+                    "limit": {"type": "integer", "default": 8},
                 },
-                "required": ["query"],
+                "required": ["artist", "track"],
             },
         },
     },
     {
         "type": "function",
         "function": {
-            "name": "get_song_lyrics_info",
-            "description": "Get Genius metadata for a song without reproducing full lyrics.",
+            "name": "get_genius_lyrics",
+            "description": "Fetch lyrics and basic info for a song from Genius.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "song_query": {"type": "string", "description": "Song title and/or artist."},
+                    "song_title": {"type": "string"},
+                    "artist": {"type": "string", "description": "Optional artist name to improve accuracy"},
                 },
-                "required": ["song_query"],
+                "required": ["song_title"],
             },
         },
     },
 ]
 
 TOOL_HANDLERS: dict[str, ToolHandler] = {
-    "search_spotify_tracks": spotify_tool.search_spotify_tracks,
-    "search_spotify_artists": spotify_tool.search_spotify_artists,
-    "get_track_recommendations": spotify_tool.get_track_recommendations,
-    "get_track_audio_features": spotify_tool.get_track_audio_features,
-    "search_musicbrainz_artist": musicbrainz_tool.search_musicbrainz_artist,
-    "get_musicbrainz_artist_details": musicbrainz_tool.get_musicbrainz_artist_details,
-    "search_genius_song": genius_tool.search_genius_song,
-    "get_song_lyrics_info": genius_tool.get_song_lyrics_info,
+    "search_musicbrainz_artists": musicbrainz_tool.search_artists,
+    "get_lastfm_similar_artists": lastfm_tool.get_similar_artists,
+    "get_lastfm_similar_tracks": lastfm_tool.get_similar_tracks,
+    "get_genius_lyrics": genius_tool.get_lyrics,
 }
 
 
@@ -159,6 +99,7 @@ async def execute_tool(name: str, arguments: str | dict[str, Any]) -> str:
         parsed_args = arguments
 
     handler = TOOL_HANDLERS[name]
+    logger.debug("Executing tool %s with args %s", name, parsed_args)
     try:
         if inspect.iscoroutinefunction(handler):
             result = await handler(**parsed_args)

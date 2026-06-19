@@ -1,13 +1,13 @@
 import json
-import logging
 from typing import Any, AsyncGenerator
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessage
 
 from config import get_settings
+from logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("llm")
 settings = get_settings()
 
 client = AsyncOpenAI(
@@ -21,6 +21,12 @@ async def chat_completion(
     tools: list[dict[str, Any]] | None = None,
     temperature: float = 0.7,
 ) -> ChatCompletionMessage:
+    logger.debug(
+        "Ollama chat completion model=%s messages=%d tools=%s",
+        settings.ollama_model,
+        len(messages),
+        bool(tools),
+    )
     response = await client.chat.completions.create(
         model=settings.ollama_model,
         messages=messages,
@@ -36,6 +42,7 @@ async def stream_chat_completion(
     tools: list[dict[str, Any]] | None = None,
     temperature: float = 0.7,
 ) -> AsyncGenerator[str, None]:
+    logger.debug("Ollama streaming completion model=%s messages=%d", settings.ollama_model, len(messages))
     stream = await client.chat.completions.create(
         model=settings.ollama_model,
         messages=messages,

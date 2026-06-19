@@ -1,68 +1,45 @@
-import logging
 from typing import Any
 
-import httpx
+import musicbrainzngs
 
-logger = logging.getLogger(__name__)
+from config import get_settings
+from logging_config import get_logger
 
-MUSICBRAINZ_API = "https://musicbrainz.org/ws/2"
-USER_AGENT = "ParliamoDiMusica/0.1 (local-music-ai-chat)"
+logger = get_logger("tools")
 
+settings = get_settings()
 
-async def _get_json(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    params = params or {}
-    params.setdefault("fmt", "json")
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
+_app_name, _version_contact = settings.musicbrainz_user_agent.split("/", 1)
+_version = _version_contact.split()[0]
+_contact = _version_contact.split("(")[1].rstrip(")")
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        response = await client.get(f"{MUSICBRAINZ_API}{path}", params=params, headers=headers)
-        response.raise_for_status()
-        return response.json()
+musicbrainzngs.set_useragent(_app_name, _version, _contact)
 
 
-async def search_musicbrainz_artist(name: str, limit: int = 5) -> list[dict[str, Any]]:
-    limit = max(1, min(limit, 25))
-    data = await _get_json("/artist", {"query": name, "limit": limit})
-    artists = []
-    for item in data.get("artists", []):
-        artists.append(
-            {
-                "mbid": item.get("id"),
-                "name": item.get("name"),
-                "type": item.get("type"),
-                "country": item.get("country"),
-                "disambiguation": item.get("disambiguation"),
-                "life_span": item.get("life-span"),
-                "tags": [tag["name"] for tag in item.get("tags", [])[:5]],
-            }
+def search_artists(query: str, limit: int = 5) -> list[dict[str, Any]]:
+    """Search for artists on MusicBrainz."""
+    logger.info("MusicBrainz artist search query=%r limit=%d", query, limit)
+    result = musicbrainzngs.search_artists(query=query, limit=limit)
+    return result.get("artist-list", [])
+
+
+def get_artist_by_id(mbid: str) -> dict[str, Any]:
+    """Get detailed artist info by MusicBrainz ID."""
+    return musicbrainzngs.get_artist_by_id(mbid, includes=["tags", "ratings", "url-rels"])
+
+
+def search_releases(
+    artist_mbid: str | None = None,
+    query: str | None = None,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    """Search releases (albums, singles, etc.)."""
+    if artist_mbid:
+        result = musicbrainzngs.browse_releases(
+            artist=artist_mbid,
+            limit=limit,
+            includes=["artist-credits"],
         )
-    return artists
-
-
-async def get_musicbrainz_artist_details(artist_name: str) -> dict[str, Any]:
-    artists = await search_musicbrainz_artist(artist_name, limit=1)
-    if not artists:
-        return {"error": f"No MusicBrainz artist found for: {artist_name}"}
-
-    artist = artists[0]
-    mbid = artist["mbid"]
-    if not mbid:
-        return {"error": f"Artist found but missing MBID: {artist_name}"}
-
-    releases = await _get_json(f"/release", {"artist": mbid, "limit": 5})
-    release_summaries = []
-    for release in releases.get("releases", []):
-        release_summaries.append(
-            {
-                "title": release.get("title"),
-                "date": release.get("date"),
-                "country": release.get("country"),
-                "mbid": release.get("id"),
-            }
-        )
-
-    return {
-        "artist": artist,
-        "notable_releases": release_summaries,
-        "source": "MusicBrainz",
-    }
+    else:
+        result = musicbrainzngs.search_releases(query=query or "", limit=limit)
+    return result.get("release-list", [])
